@@ -77,7 +77,7 @@ const struct {
 #define NUM_TIMINGS (sizeof(timings)/sizeof(*timings))
 #define SAMPLE_BITS 16
 
-int main() {
+void playNote(unsigned fundFreq) {
 	double time = 0, end;
 	double val;
 	double dVolume, volume = 0.3; // Start at 0.5 so combining sin waves does not cross 1
@@ -103,12 +103,11 @@ int main() {
 			} else {
 				break;
 			}
-			fprintf(stderr, "%f\n", volume);
 		}
 		val = 0;
 		unsigned harmonicLimit = timings[timing].numHarmonics;
 		for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
-			val += sin_scaled(FUND_FREQ*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
+			val += sin_scaled(fundFreq*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 		}
 		val = val * volume;
 		val = (val/2) + 0.5; // Scale into 0-1 range
@@ -121,7 +120,24 @@ int main() {
 		time += 1.0/SAMPLE_RATE;
 		ratioIntoTiming += ratioPerSample;
 	}
-	fprintf(stderr, "%f\n", volume);
-	
+}
+
+int main() {
+	playNote(110); // A2
+	playNote(123); // B2
+	playNote(131); // C3
+	playNote(147); // D3
+	playNote(165); // E3
+	playNote(175); // F3
+	playNote(196); // G3
+	playNote(220); // A3
+	playNote(247); // B3
+	playNote(262); // C4
+	playNote(294); // D4
+	playNote(330); // E4
+	playNote(349); // F4
+	playNote(392); // G4
+	playNote(440); // A4
+
 	return 0;
 }
