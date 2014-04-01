@@ -74,50 +74,70 @@ const struct {
 	
 	// or 1.0 to 5k; 0.5 to 4k; 0.5 to 3.35k; 0.5 to 2.5k; 0.75 to 2.0k; 1.75 to 1.6k
 };
-#define NUM_TIMINGS (sizeof(timings)/sizeof(*timings))
+// NUM_TIMINGS removes the last, empty timing used for interpolation
+#define NUM_TIMINGS (sizeof(timings)/sizeof(*timings) - 1)
 #define SAMPLE_BITS 16
 
-void playNote(unsigned fundFreq) {
-	double time = 0, end;
-	double val;
-	double dVolume, volume = 0.3; // Start at 0.3 so combining sin waves does not cross 1
+struct NoteState {
+	double time, timingEnd;
+	double volume, dVolume;
 	double ratioPerSample, ratioIntoTiming;
-	unsigned short sample;
-	
-	unsigned timing,harmonic;
-	time = 0;
-	timing = 0;
-	end = timings[0].length;
-	ratioPerSample = 1.0 / timings[0].length / SAMPLE_RATE;
-	dVolume = (volume*timings[0].multiplier - volume) * ratioPerSample;
-	ratioIntoTiming = 0;
-	
-	for(;;) {
-		if(time >= end) {
-			++timing;
-			if(timing < NUM_TIMINGS) {
-				end += timings[timing].length;
-				ratioPerSample = 1.0 / timings[timing].length / SAMPLE_RATE;
-				ratioIntoTiming = 0;
-				dVolume = (volume*timings[timing].multiplier - volume) * ratioPerSample;
-			} else {
-				break;
-			}
-		}
-		val = 0;
-		unsigned harmonicLimit = timings[timing].numHarmonics;
-		for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
-			val += sin_scaled(fundFreq*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
-		}
-		val = val * volume;
-		sample = val * (1<<(SAMPLE_BITS-1));
-		
-		write(1, &sample, 2);
-		
-		volume += dVolume;
-		time += 1.0/SAMPLE_RATE;
-		ratioIntoTiming += ratioPerSample;
+	unsigned timing;
+	unsigned fundFreq;
+};
+
+void initNote(struct NoteState *note, unsigned fundFreq) {
+	double ratioPerSample = 1.0 / timings[0].length / SAMPLE_RATE;
+	double dVolume = (timings[0].multiplier - 1) * 0.3 * ratioPerSample;
+
+	note->time = 0;
+	note->timingEnd = timings[0].length;
+	note->volume = 0.3; // To keep below 1 when all sine waves are added
+	note->dVolume = dVolume;
+	note->ratioPerSample = ratioPerSample;
+	note->ratioIntoTiming = 0;
+	note->timing = 0;
+	note->fundFreq = fundFreq;
+}
+
+// Returns true if the note is still playing and false if it is finished
+_Bool getNoteSample(struct NoteState *note, unsigned short *outputSample) {
+	double val;
+	unsigned harmonic, harmonicLimit;
+
+	// Local copies
+	unsigned timing = note->timing;
+	unsigned fundFreq = note->fundFreq;
+	double time = note->time;
+	double ratioIntoTiming = note->ratioIntoTiming;
+	double volume = note->volume;
+	double not_ratioIntoTiming = 1 - ratioIntoTiming;
+
+	val = 0;
+	harmonicLimit = timings[timing].numHarmonics;
+	for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
+		val += sin_scaled(fundFreq*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * not_ratioIntoTiming + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 	}
+	val = val * volume;
+	*outputSample = val * (1<<(SAMPLE_BITS-1));
+
+	volume += note->dVolume;
+	note->volume = volume;
+	time += 1.0/SAMPLE_RATE;
+	note->time = time;
+	note->ratioIntoTiming = ratioIntoTiming + note->ratioPerSample;
+
+	if(time >= note->timingEnd) {
+		++timing;
+		if(timing < NUM_TIMINGS) {
+			note->timing = timing;
+			note->timingEnd += timings[timing].length;
+			note->ratioPerSample = 1.0 / timings[timing].length / SAMPLE_RATE;
+			note->ratioIntoTiming = 0;
+			note->dVolume = (timings[timing].multiplier - 1) * volume * note->ratioPerSample;
+		} else return 0;
+	}
+	return 1;
 }
 
 int main() {
@@ -127,7 +147,15 @@ int main() {
 		unsigned freq = freq0[c - 'A'];
 		c = getchar();
 		freq <<= c - '0';
-		playNote(freq / 100);
+
+		struct NoteState note;
+		initNote(&note, freq / 100);
+		unsigned short sample;
+		_Bool hasMore;
+		do {
+			hasMore = getNoteSample(&note, &sample);
+			write(1, &sample, 2);
+		} while(hasMore);
 	}
 
 	return 0;
