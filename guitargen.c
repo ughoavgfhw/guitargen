@@ -53,7 +53,7 @@ const struct {
 		// Harmonic			 2       3       4       5       6       7      8   9      10      11      12      13      14      15      16     17 18  19      20      21      22      23      24     25 26 27  28      29      30      31      32      33     34 35 36 37 38  39      40     41  42      43      44
 		// Partial Number	32      35      36      31      24      25      -  01      02      19      20      26      27      00      03      -  -  04      05      06      21      07      08      -  -  -  09      22      23      30      11      12      -  -  -  -  -  13      14      -  15      16      18
 	// 1.000 second up to 5.0kHz split to 0.1 + 0.15 + 0.25 + 0.5 seconds
-	{0.100, 1.0000, 0, {0}},
+	//{0.100, 1.0000, 0, {0}},
 	{0.150, 0.7638, 44, {1, 0.9394, 0.2622, 0.3507, 0.2504, 0.1056, 0.1134, 0, 0.0140, 0.0783, 0.1048, 0.0434, 0.0680, 0.1010, 0.0654, 0.0293, 0, 0, 0.0339, 0.0702, 0.0902, 0.1042, 0.0628, 0.0323, 0, 0, 0, 0.0293, 0.0262, 0.1166, 0.0376, 0.0374, 0.0610, 0, 0, 0, 0, 0, 0.0298, 0.0387, 0, 0.0289, 0.0295, 0.0331}},
 	{0.250, 0.7094, 44, {1, 0.8860, 0.5025, 0.5161, 0.3476, 0.1453, 0.1351, 0, 0.0354, 0.0904, 0.1348, 0.0569, 0.1348, 0.0588, 0.0623, 0.0290, 0, 0, 0.0254, 0.0312, 0.0830, 0.1015, 0.0621, 0.0245, 0, 0, 0, 0.0156, 0.0101, 0.0550, 0.0172, 0.0189, 0.0364, 0, 0, 0, 0, 0, 0.0112, 0.0108, 0, 0.0112, 0.0113, 0.0028}},
 	{0.500, 0.7273, 44, {1, 0.4717, 0.4832, 0.5992, 0.4270, 0.1353, 0.1380, 0, 0.0375, 0.0723, 0.1002, 0.0874, 0.1811, 0.0272, 0.0328, 0.0254, 0, 0, 0.0257, 0.0393, 0.0411, 0.0568, 0.0204, 0.0124, 0, 0, 0, 0.0053, 0.0094, 0.0142, 0.0076, 0.0095, 0.0097, 0, 0, 0, 0, 0, 0.0022, 0.0013, 0, 0.0023, 0.0024, 0.0007}},
@@ -83,40 +83,8 @@ int main() {
 	double dVolume, volume = 0.3; // Start at 0.5 so combining sin waves does not cross 1
 	double ratioPerSample, ratioIntoTiming;
 	unsigned short sample;
-	unsigned currSample, numSamples;
 	
 	unsigned timing,harmonic;
-	for(timing = 0; timing < NUM_TIMINGS; ++timing)
-		time += timings[timing].length;
-	time += 0.5; // 0.5 second silence
-	numSamples = time * SAMPLE_RATE;
-	
-	unsigned utmp; unsigned short ustmp;
-	write(1, "RIFF", 4);
-	utmp = 36+numSamples*SAMPLE_BITS/8;
-	write(1, &utmp, 4);
-	write(1, "WAVE", 4);
-	write(1, "fmt ", 4);
-	utmp = 16;
-	write(1, &utmp, 4);
-	ustmp = 1;
-	write(1, &ustmp, 2);
-	write(1, &ustmp, 2);
-	utmp = SAMPLE_RATE;
-	write(1, &utmp, 4);
-	utmp *= SAMPLE_BITS/8;
-	write(1, &utmp, 4);
-	ustmp = SAMPLE_BITS/8;
-	write(1, &ustmp, 2);
-	ustmp = SAMPLE_BITS;
-	write(1, &ustmp, 2);
-	write(1, "data", 4);
-	utmp = numSamples*SAMPLE_BITS/8;
-	write(1, &utmp, 4);
-	ustmp = 0;
-	for(currSample = 0; currSample < SAMPLE_RATE/2; ++currSample)
-		write(1, &ustmp, 2); // 0.5 second silence
-	
 	time = 0;
 	timing = 0;
 	end = timings[0].length;
@@ -124,7 +92,7 @@ int main() {
 	dVolume = (volume*timings[0].multiplier - volume) * ratioPerSample;
 	ratioIntoTiming = 0;
 	
-	for(; currSample < numSamples; ++currSample) {
+	for(;;) {
 		if(time >= end) {
 			++timing;
 			if(timing < NUM_TIMINGS) {
@@ -133,15 +101,13 @@ int main() {
 				ratioIntoTiming = 0;
 				dVolume = (volume*timings[timing].multiplier - volume) * ratioPerSample;
 			} else {
-				end += 100;
-				dVolume = 0;
+				break;
 			}
 			fprintf(stderr, "%f\n", volume);
 		}
 		val = 0;
 		unsigned harmonicLimit = timings[timing].numHarmonics;
 		for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
-			//val += sin(2*M_PI*FUND_FREQ*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 			val += sin_scaled(FUND_FREQ*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 		}
 		val = val * volume;
