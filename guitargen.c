@@ -80,7 +80,7 @@ const struct {
 void playNote(unsigned fundFreq) {
 	double time = 0, end;
 	double val;
-	double dVolume, volume = 0.3; // Start at 0.5 so combining sin waves does not cross 1
+	double dVolume, volume = 0.3; // Start at 0.3 so combining sin waves does not cross 1
 	double ratioPerSample, ratioIntoTiming;
 	unsigned short sample;
 	
@@ -110,9 +110,7 @@ void playNote(unsigned fundFreq) {
 			val += sin_scaled(fundFreq*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * (1-ratioIntoTiming) + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 		}
 		val = val * volume;
-		val = (val/2) + 0.5; // Scale into 0-1 range
-		if(val < 1.0) sample = val * (1<<SAMPLE_BITS) - (1<<(SAMPLE_BITS-1));
-		else sample = (1<<SAMPLE_BITS)-1;
+		sample = val * (1<<(SAMPLE_BITS-1));
 		
 		write(1, &sample, 2);
 		
