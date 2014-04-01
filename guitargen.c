@@ -123,21 +123,14 @@ void playNote(unsigned fundFreq) {
 }
 
 int main() {
-	playNote(110); // A2
-	playNote(123); // B2
-	playNote(131); // C3
-	playNote(147); // D3
-	playNote(165); // E3
-	playNote(175); // F3
-	playNote(196); // G3
-	playNote(220); // A3
-	playNote(247); // B3
-	playNote(262); // C4
-	playNote(294); // D4
-	playNote(330); // E4
-	playNote(349); // F4
-	playNote(392); // G4
-	playNote(440); // A4
+	int c;
+	while((c = getchar()) != EOF) {
+		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
+		unsigned freq = freq0[c - 'A'];
+		c = getchar();
+		freq <<= c - '0';
+		playNote(freq / 100);
+	}
 
 	return 0;
 }
