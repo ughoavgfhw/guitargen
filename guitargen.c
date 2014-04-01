@@ -1,6 +1,11 @@
 #include <math.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <signal.h>
+#include <sys/timerfd.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <stdint.h>
 
 #define FUND_FREQ 110
 #define SAMPLE_RATE 44100
@@ -140,7 +145,56 @@ _Bool getNoteSample(struct NoteState *note, unsigned short *outputSample) {
 	return 1;
 }
 
+void *playerThread(void *input) {
+	struct NoteState **notePtr = input;
+	// Write 10ms worth of samples at once to sync with system clock rate
+	unsigned short samples[SAMPLE_RATE / 100];
+	int timer;
+	{
+		// Create a real-time timer file descriptr
+		timer = timerfd_create(CLOCK_REALTIME, 0);
+
+		// Set the timer to trigger soon, and repeat every 10 ms
+		struct itimerspec timerVal;
+		timerVal.it_interval.tv_sec = 0;
+		timerVal.it_interval.tv_nsec = 10000000;
+		timerVal.it_value.tv_sec = 0;
+		timerVal.it_value.tv_nsec = 1;
+		timerfd_settime(timer, 0, &timerVal, NULL);
+	}
+
+	while(1) {
+		unsigned i;
+		uint64_t ign;
+		for(i = 0; i < (sizeof(samples)/sizeof(*samples)); ++i) {
+			struct NoteState *note = *notePtr;
+			if(note == NULL) samples[i] = 0;
+			else if(note != (void*)-1U) {
+				if(!getNoteSample(note, &samples[i]))
+					__sync_bool_compare_and_swap(notePtr, note, NULL, note, notePtr);
+			} else break;
+		}
+
+		if(i == 0) break;
+		read(timer, &ign, sizeof(ign)); // Wait for the timer
+
+		write(1, samples, i*sizeof(*samples));
+		if(i < (sizeof(samples)/sizeof(*samples)))
+			break;
+	}
+
+	close(timer);
+	return NULL;
+}
+
 int main() {
+	struct NoteState notes[2];
+	struct NoteState *currNote = NULL;
+	unsigned char nextNote = 0;
+
+	pthread_t thread;
+	pthread_create(&thread, NULL, playerThread, &currNote);
+
 	int c;
 	while((c = getchar()) != EOF) {
 		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
@@ -148,15 +202,16 @@ int main() {
 		c = getchar();
 		freq <<= c - '0';
 
-		struct NoteState note;
-		initNote(&note, freq / 100);
-		unsigned short sample;
-		_Bool hasMore;
-		do {
-			hasMore = getNoteSample(&note, &sample);
-			write(1, &sample, 2);
-		} while(hasMore);
+		initNote(&notes[nextNote], freq / 100);
+		__sync_synchronize();
+		currNote = &notes[nextNote];
+		__sync_synchronize();
+		nextNote = (nextNote + 1) & 1;
 	}
 
+	__sync_synchronize();
+	currNote = (void*)-1U;
+	__sync_synchronize();
+	pthread_join(thread, NULL);
 	return 0;
 }
