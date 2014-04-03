@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <stdint.h>
+#include <termios.h>
 
 #define FUND_FREQ 110
 #define SAMPLE_RATE 44100
@@ -188,6 +189,15 @@ void *playerThread(void *input) {
 }
 
 int main() {
+	if(isatty(0)) {
+		struct termios t;
+		tcgetattr(0, &t);
+		t.c_lflag &= ~ICANON;
+		t.c_cc[VMIN] = 2; // Return after 2 bytes
+		t.c_cc[VTIME] = 1; // or 1 byte with 0.1 second delay
+		tcsetattr(0, TCSANOW, &t);
+	}
+
 	struct NoteState notes[2];
 	struct NoteState *currNote = NULL;
 	unsigned char nextNote = 0;
