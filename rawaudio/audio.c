@@ -218,7 +218,7 @@ int32_t audioplay_delete(AUDIOPLAY_STATE_T *st)
    return 0;
 }
 
-uint8_t *audioplay_get_buffer(AUDIOPLAY_STATE_T *st)
+void *audioplay_get_buffer(AUDIOPLAY_STATE_T *st)
 {
    OMX_BUFFERHEADERTYPE *hdr = NULL;
 
@@ -239,7 +239,7 @@ uint8_t *audioplay_get_buffer(AUDIOPLAY_STATE_T *st)
 }
 
 int32_t audioplay_play_buffer(AUDIOPLAY_STATE_T *st,
-                              uint8_t *buffer,
+                              void *buffer,
                               uint32_t length)
 {
    OMX_BUFFERHEADERTYPE *hdr = NULL, *prev = NULL;

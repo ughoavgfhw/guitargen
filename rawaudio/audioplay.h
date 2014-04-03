@@ -123,7 +123,7 @@ extern int32_t  audioplay_delete(AUDIOPLAY_STATE_T *handle);
  * @return              A pointer to an available buffer.  If no buffers are
  *                      available, then <DFN>NULL</DFN> will be returned.
  *********************************************************************************/
-extern uint8_t *  audioplay_get_buffer(AUDIOPLAY_STATE_T *handle);
+extern void *  audioplay_get_buffer(AUDIOPLAY_STATE_T *handle);
 
 
 /**
@@ -144,7 +144,7 @@ extern uint8_t *  audioplay_get_buffer(AUDIOPLAY_STATE_T *handle);
  * @return               0 on success, -1 on failure
  ********************************************************************************/
 extern int32_t  audioplay_play_buffer(AUDIOPLAY_STATE_T *handle,
-                                               uint8_t *buffer,
+                                               void *buffer,
                                                uint32_t length);
 
 /**

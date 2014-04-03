@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <termios.h>
+#include "rawaudio/audioplay.h"
 
 #define FUND_FREQ 110
 #define SAMPLE_RATE 44100
@@ -107,7 +108,7 @@ void initNote(struct NoteState *note, unsigned fundFreq) {
 }
 
 // Returns true if the note is still playing and false if it is finished
-_Bool getNoteSample(struct NoteState *note, unsigned short *outputSample) {
+_Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	double val;
 	unsigned harmonic, harmonicLimit;
 
@@ -147,9 +148,15 @@ _Bool getNoteSample(struct NoteState *note, unsigned short *outputSample) {
 }
 
 void *playerThread(void *input) {
-	struct NoteState **notePtr = input;
+	bcm_host_init();
+
 	// Write 10ms worth of samples at once to sync with system clock rate
-	unsigned short samples[SAMPLE_RATE / 100];
+	const n_samples = SAMPLE_RATE / 100;
+	AUDIOPLAY_STATE_T *player;
+	struct NoteState **notePtr = input;
+	audioplay_create(&player, SAMPLE_RATE, 1, SAMPLE_BITS,
+					 2, SAMPLE_BITS/8 * n_samples);
+	audioplay_set_dest(player, "local");
 	int timer;
 	{
 		// Create a real-time timer file descriptr
@@ -167,7 +174,14 @@ void *playerThread(void *input) {
 	while(1) {
 		unsigned i;
 		uint64_t ign;
-		for(i = 0; i < (sizeof(samples)/sizeof(*samples)); ++i) {
+		short *samples;
+
+		// Get one of the buffers. This shouldn't ever have to wait
+		while((samples = audioplay_get_buffer(player)) == NULL) {
+			usleep(1000);
+		}
+
+		for(i = 0; i < n_samples; ++i) {
 			struct NoteState *note = *notePtr;
 			if(note == NULL) samples[i] = 0;
 			else if(note != (void*)-1U) {
@@ -179,12 +193,13 @@ void *playerThread(void *input) {
 		if(i == 0) break;
 		read(timer, &ign, sizeof(ign)); // Wait for the timer
 
-		write(1, samples, i*sizeof(*samples));
-		if(i < (sizeof(samples)/sizeof(*samples)))
+		audioplay_play_buffer(player, samples, i*sizeof(*samples));
+		if(i < n_samples)
 			break;
 	}
 
 	close(timer);
+	audioplay_delete(player);
 	return NULL;
 }
 
