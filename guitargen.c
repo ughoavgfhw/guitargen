@@ -11,6 +11,7 @@
 
 #define FUND_FREQ 110
 #define SAMPLE_RATE 44100
+#define SAMPLE_BITS 16
 
 // Returns the result of sin with the positive argument scaled by samples/s/2pi
 // x must be no more than 2^32/SIN_SIZE (currently ~190.2 seconds)
@@ -54,14 +55,63 @@ int sin_scaled(unsigned x) {
 	return 0;
 }
 
-#define MAX_HARMONICS 45
+#define MAX_HARMONICS 58
 struct Timing {
 	unsigned length; // In samples
 	double multiplier;
 	unsigned numHarmonics;
 	double harmonics[MAX_HARMONICS];
 };
+#define TIMING(len,vol,num,vals...) {SAMPLE_RATE*len, vol, num, vals}
 
+struct TimingInfo {
+	unsigned timingCount; // Should exclude an empty timing at the end
+	const struct Timing *timings;
+};
+
+struct FrequencyTimingRange {
+	unsigned minFreq, maxFreq; // Max is excluded
+	struct TimingInfo timingInfo;
+};
+#define TIMING_MAP(min,max,tim) {min, max, {sizeof(tim)/sizeof(*tim)-1, tim}}
+
+#ifndef OLD_TIMINGS
+const struct Timing _t_A2[] = {
+#  include "timings/A2.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_A2S[] = {
+#  include "timings/A2S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_B2[] = {
+#  include "timings/B2.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_C3[] = {
+#  include "timings/C3.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_C3S[] = {
+#  include "timings/C3S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_D3[] = {
+#  include "timings/D3.c"
+	{0, 1, 0, {0}}
+};
+
+// Ordered by frequency, non-overlapping
+const struct FrequencyTimingRange freqTimeMap[] = {
+	TIMING_MAP(106, 113, _t_A2),
+	TIMING_MAP(113, 120, _t_A2S),
+	TIMING_MAP(120, 126, _t_B2),
+	TIMING_MAP(126, 134, _t_C3),
+	TIMING_MAP(134, 142, _t_C3S),
+	TIMING_MAP(142, 150, _t_D3)
+};
+#else
+# warning "Old timings in use"
 const struct Timing timings[] = {
 		// Unused partials: 34, 28, 10, 29, 17
 		// Harmonic			 2       3       4       5       6       7      8   9      10      11      12      13      14      15      16     17 18  19      20      21      22      23      24     25 26 27  28      29      30      31      32      33     34 35 36 37 38  39      40     41  42      43      44
@@ -88,21 +138,15 @@ const struct Timing timings[] = {
 	
 	// or 1.0 to 5k; 0.5 to 4k; 0.5 to 3.35k; 0.5 to 2.5k; 0.75 to 2.0k; 1.75 to 1.6k
 };
-#define SAMPLE_BITS 16
-
-struct TimingInfo {
-	unsigned timingCount; // Should exclude an empty timing at the end
-	const struct Timing *timings;
-};
 const struct Timing t[] = {{SAMPLE_RATE, 0.5, 1, {1}}, {0, 1, 0, {0}}};
-const struct FrequencyTimingRange {
-	unsigned minFreq, maxFreq; // Max is excluded
-	struct TimingInfo timingInfo;
-} freqTimeMap[] = { // Ordered by frequency, non-overlapping
+
+// Ordered by frequency, non-overlapping
+const struct FrequencyTimingRange freqTimeMap[] = {
 	{0, 100, {1, t}},
 	{100, 200, {sizeof(timings)/sizeof(*timings) - 1, timings}},
 	{200, 20000, {1, t}}
 };
+#endif //ndef OLD_TIMINGS
 
 struct NoteState {
 	unsigned time, timingEnd;
