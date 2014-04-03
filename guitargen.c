@@ -93,13 +93,13 @@ struct NoteState {
 	unsigned fundFreq;
 };
 
-void initNote(struct NoteState *note, unsigned fundFreq) {
+void initNote(struct NoteState *note, unsigned fundFreq, double initialVol) {
 	double ratioPerSample = 1.0 / timings[0].length / SAMPLE_RATE;
 	double dVolume = (timings[0].multiplier - 1) * 0.3 * ratioPerSample;
 
 	note->time = 0;
 	note->timingEnd = timings[0].length;
-	note->volume = 0.3; // To keep below 1 when all sine waves are added
+	note->volume = initialVol;
 	note->dVolume = dVolume;
 	note->ratioPerSample = ratioPerSample;
 	note->ratioIntoTiming = 0;
@@ -230,7 +230,8 @@ int main() {
 			unsigned freq = freq0[c - 'A'];
 			freq <<= octave;
 
-			initNote(&notes[nextNote], freq / 100);
+			// Initial volume 0.3 to keep below 1 when all sine waves are added
+			initNote(&notes[nextNote], freq / 100, 0.3);
 			__sync_synchronize();
 			currNote = &notes[nextNote];
 			__sync_synchronize();
