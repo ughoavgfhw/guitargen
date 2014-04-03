@@ -162,29 +162,14 @@ void *playerThread(void *input) {
 	audioplay_create(&player, SAMPLE_RATE, 1, SAMPLE_BITS,
 					 2, SAMPLE_BITS/8 * n_samples);
 	audioplay_set_dest(player, "local");
-	int timer;
-	{
-		// Create a real-time timer file descriptr
-		timer = timerfd_create(CLOCK_REALTIME, 0);
-
-		// Set the timer to trigger soon, and repeat every 10 ms
-		struct itimerspec timerVal;
-		timerVal.it_interval.tv_sec = 0;
-		timerVal.it_interval.tv_nsec = 10000000;
-		timerVal.it_value.tv_sec = 0;
-		timerVal.it_value.tv_nsec = 1;
-		timerfd_settime(timer, 0, &timerVal, NULL);
-	}
 
 	while(1) {
 		unsigned i;
 		uint64_t ign;
 		short *samples;
 
-		// Get one of the buffers. This shouldn't ever have to wait
-		while((samples = audioplay_get_buffer(player)) == NULL) {
-			usleep(1000);
-		}
+		// Get one of the buffers. This shouldn't ever wait long, so just spin
+		while((samples = audioplay_get_buffer(player)) == NULL) ;
 
 		for(i = 0; i < n_samples; ++i) {
 			struct NoteState *note = *notePtr;
@@ -196,14 +181,18 @@ void *playerThread(void *input) {
 		}
 
 		if(i == 0) break;
-		read(timer, &ign, sizeof(ign)); // Wait for the timer
 
 		audioplay_play_buffer(player, samples, i*sizeof(*samples));
 		if(i < n_samples)
 			break;
+
+		// If more than 12.5ms left, wait until no more than 12ms left
+		// (don't wait for 10ms because of delay in being woken)
+		uint32_t pendingSamples = audioplay_get_latency(player);
+		if(pendingSamples >= SAMPLE_RATE/80)
+			usleep(pendingSamples * (1000000/SAMPLE_RATE) - 12000);
 	}
 
-	close(timer);
 	audioplay_delete(player);
 	return NULL;
 }
