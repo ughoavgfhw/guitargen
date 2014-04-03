@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <signal.h>
+#include <string.h>
 #include <sys/timerfd.h>
 #include <pthread.h>
 #include <sys/types.h>
@@ -9,9 +10,10 @@
 #include <termios.h>
 #include "rawaudio/audioplay.h"
 
-#define FUND_FREQ 110
 #define SAMPLE_RATE 44100
 #define SAMPLE_BITS 16
+
+#define NUM_STRINGS 2
 
 // Returns the result of sin with the positive argument scaled by samples/s/2pi
 // x must be no more than 2^32/SIN_SIZE (currently ~190.2 seconds)
@@ -228,35 +230,49 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	return 1;
 }
 
+struct PlayerState {
+	struct NoteState *notes[NUM_STRINGS];
+};
+
 void *playerThread(void *input) {
 	bcm_host_init();
 
 	// Write 10ms worth of samples at once to sync with system clock rate
 	const n_samples = SAMPLE_RATE / 100;
 	AUDIOPLAY_STATE_T *player;
-	struct NoteState **notePtr = input;
+	struct PlayerState *state = input;
 	audioplay_create(&player, SAMPLE_RATE, 1, SAMPLE_BITS,
 					 2, SAMPLE_BITS/8 * n_samples);
 	audioplay_set_dest(player, "local");
 
 	while(1) {
-		unsigned i;
+		unsigned i, j;
+		unsigned char stop;
 		uint64_t ign;
-		short *samples;
+		short *samples, currSample;
 
 		// Get one of the buffers. This shouldn't ever wait long, so just spin
 		while((samples = audioplay_get_buffer(player)) == NULL) ;
 
-		for(i = 0; i < n_samples; ++i) {
-			struct NoteState *note = *notePtr;
-			if(note == NULL) samples[i] = 0;
-			else if(note != (void*)-1U) {
-				if(!getNoteSample(note, &samples[i]))
-					__sync_bool_compare_and_swap(notePtr, note, NULL, note, notePtr);
-			} else break;
+		stop = 0;
+		for(i = 0; i < n_samples && !stop; ++i) {
+			samples[i] = 0;
+			for(j = 0; j < sizeof(state->notes)/sizeof(*state->notes); ++j) {
+				struct NoteState *note = state->notes[j];
+				if(note == (void*)-1U) {
+					stop = 1;
+					break;
+				} else if(note != NULL) {
+					if(!getNoteSample(note, &currSample))
+						__sync_bool_compare_and_swap(&state->notes[j], note,
+													 NULL, note,
+													 &state->notes[j]);
+					samples[i] += currSample;
+				}
+			}
 		}
 
-		if(i == 0) break;
+		if(stop) break;
 
 		audioplay_play_buffer(player, samples, i*sizeof(*samples));
 		if(i < n_samples)
@@ -277,48 +293,46 @@ int main() {
 	if(isatty(0)) {
 		struct termios t;
 		tcgetattr(0, &t);
-		t.c_lflag &= ~ICANON;
-		t.c_cc[VMIN] = 1; // Return after each byte
+		cfmakeraw(&t); // Raw input mode
+		t.c_cc[VMIN] = 3; // Return after each 3-byte packet
 		t.c_cc[VTIME] = 0;
 		tcsetattr(0, TCSANOW, &t);
 	}
 
-	struct NoteState notes[2];
-	struct NoteState *currNote = NULL;
-	unsigned char nextNote = 0;
+	struct NoteState notes[NUM_STRINGS][2];
+	struct PlayerState state;
+	memset(&state, 0, sizeof(state));
+	unsigned char nextNote[NUM_STRINGS];
+	memset(&nextNote, 0, sizeof(nextNote));
 
 	pthread_t thread;
-	pthread_create(&thread, NULL, playerThread, &currNote);
+	pthread_create(&thread, NULL, playerThread, &state);
 
-	int c, octave = 4;
-	while((c = getchar()) != EOF) {
-		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
-		unsigned sharpMult = 271;
+	uint8_t buffer[3];
+	while(read(0, buffer, sizeof(buffer)) == sizeof(buffer)) {
+		static unsigned freqs[19+(NUM_STRINGS-1)*5] = {
+			11000, 11654, 12347, 13081, 13859, 14683, 15556, 16481,
+			17461, 18500, 19600, 20765, 22000, 23308, 24694, 26163,
+			27718, 29366, 31113, 32963, 34923, 36999, 39200, 41530
+		};
 
-		if('a' <= c && 'g' >= c) {
-			c -= 'a' - 'A';
-			sharpMult = 256;
-		}
-		if('0' <= c && '8' >= c) octave = c - '0';
-		else if('A' <= c && 'G' >= c) {
-			unsigned freq = freq0[c - 'A'] * sharpMult;
-			freq >>= 8 - octave;
+		if(buffer[0] == 0 || buffer[0] > NUM_STRINGS || buffer[1] > 18 ||
+		   buffer[2] != 0xff)
+			continue;
+		uint8_t string = buffer[0] - 1;
 
-			// Initial volume 0.3 to keep below 1 when all sine waves are added
-			initNote(&notes[nextNote], freq / 100, 0.3);
-			__sync_synchronize();
-			currNote = &notes[nextNote];
-			__sync_synchronize();
-			nextNote = (nextNote + 1) & 1;
-		} else if(c == 0x04 && isatty(0)) {
-			// Non-canonical terminal mode breaks ^D for EOF, so handle it here
-			fputc('\n', stderr);
-			break;
-		}
+		unsigned freq = freqs[string*5+buffer[1]];
+
+		// Initial volume 0.3 to keep below 1 when all sine waves are added
+		initNote(&notes[string][nextNote[string]], (freq+50) / 100, 0.3);
+		__sync_synchronize();
+		state.notes[string] = &notes[string][nextNote[string]];
+		__sync_synchronize();
+		nextNote[string] = (nextNote[string] + 1) & 1;
 	}
 
 	__sync_synchronize();
-	currNote = (void*)-1U;
+	state.notes[0] = (void*)-1U; // Only need to set 1 to stop the player
 	__sync_synchronize();
 	pthread_join(thread, NULL);
 	return 0;

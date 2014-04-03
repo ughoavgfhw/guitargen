@@ -1,6 +1,7 @@
 #!/bin/bash
 
 make guitargen && \
-(sleep 0.25; echo -n 2A; sleep 0.2; echo -n B; sleep 0.5; echo -n 3C; \
- sleep 3; echo -n D; sleep 1; echo -n E; sleep 0.5; echo -n F; \
- sleep 0.25; echo -nG; sleep 6) | ./guitargen
+(sleep 0.25; printf '\x01\x00\xff'; sleep 0.2; printf '\x02\x00\xff'; \
+ sleep 0.5; printf '\x01\x05\xff'; sleep 3; printf '\x01\x01\xff'; sleep 1; \
+ printf '\x02\x01\xff'; sleep 0.5; printf '\x01\x06\xff'; sleep 0.25; \
+ printf '\x01\x02\xff'; sleep 6) | ./guitargen
