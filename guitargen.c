@@ -193,8 +193,8 @@ int main() {
 		struct termios t;
 		tcgetattr(0, &t);
 		t.c_lflag &= ~ICANON;
-		t.c_cc[VMIN] = 2; // Return after 2 bytes
-		t.c_cc[VTIME] = 1; // or 1 byte with 0.1 second delay
+		t.c_cc[VMIN] = 1; // Return after each byte
+		t.c_cc[VTIME] = 0;
 		tcsetattr(0, TCSANOW, &t);
 	}
 
@@ -205,18 +205,26 @@ int main() {
 	pthread_t thread;
 	pthread_create(&thread, NULL, playerThread, &currNote);
 
-	int c;
+	int c, octave = 4;
 	while((c = getchar()) != EOF) {
 		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
-		unsigned freq = freq0[c - 'A'];
-		c = getchar();
-		freq <<= c - '0';
 
-		initNote(&notes[nextNote], freq / 100);
-		__sync_synchronize();
-		currNote = &notes[nextNote];
-		__sync_synchronize();
-		nextNote = (nextNote + 1) & 1;
+		if('a' <= c && 'g' >= c) c -= 'a' - 'A';
+		if('0' <= c && '8' >= c) octave = c - '0';
+		else if('A' <= c && 'G' >= c) {
+			unsigned freq = freq0[c - 'A'];
+			freq <<= octave;
+
+			initNote(&notes[nextNote], freq / 100);
+			__sync_synchronize();
+			currNote = &notes[nextNote];
+			__sync_synchronize();
+			nextNote = (nextNote + 1) & 1;
+		} else if(c == 0x04 && isatty(0)) {
+			// Non-canonical terminal mode breaks ^D for EOF, so handle it here
+			putchar('\n');
+			break;
+		}
 	}
 
 	__sync_synchronize();
