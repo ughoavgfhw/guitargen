@@ -294,7 +294,7 @@ int main() {
 		struct termios t;
 		tcgetattr(0, &t);
 		t.c_lflag &= ~ICANON;
-		t.c_cc[VMIN] = 1; // Return after each byte
+		t.c_cc[VMIN] = 2; // Return after each pair of bytes
 		t.c_cc[VTIME] = 0;
 		tcsetattr(0, TCSANOW, &t);
 	}
@@ -308,33 +308,26 @@ int main() {
 	pthread_t thread;
 	pthread_create(&thread, NULL, playerThread, &state);
 
-	int c, octave = 4;
-	unsigned char string = 0;
-	while((c = getchar()) != EOF) {
-		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
-		unsigned sharpMult = 271;
+	uint8_t buffer[2];
+	while(read(0, buffer, sizeof(buffer)) == sizeof(buffer)) {
+		static unsigned freqs[19+(NUM_STRINGS-1)*5] = {
+			11000, 11654, 12347, 13081, 13859, 14683, 15556, 16481,
+			17461, 18500, 19600, 20765, 22000, 23308, 24694, 26163,
+			27718, 29366, 31113, 32963, 34923, 36999, 39200, 41530
+		};
 
-		if('a' <= c && 'g' >= c) {
-			c -= 'a' - 'A';
-			sharpMult = 256;
-		}
-		if('0' <= c && '8' >= c) octave = c - '0';
-		else if('A' <= c && 'G' >= c) {
-			unsigned freq = freq0[c - 'A'] * sharpMult;
-			freq >>= 8 - octave;
+		if(buffer[0] == 0 || buffer[0] > NUM_STRINGS || buffer[1] > 18)
+			continue;
+		uint8_t string = buffer[0] - 1;
 
-			// Initial volume 0.3 to keep below 1 when all sine waves are added
-			initNote(&notes[string][nextNote[string]], freq / 100, 0.3);
-			__sync_synchronize();
-			state.notes[string] = &notes[string][nextNote[string]];
-			__sync_synchronize();
-			nextNote[string] = (nextNote[string] + 1) & 1;
-			string = (string + 1) % NUM_STRINGS;
-		} else if(c == 0x04 && isatty(0)) {
-			// Non-canonical terminal mode breaks ^D for EOF, so handle it here
-			fputc('\n', stderr);
-			break;
-		}
+		unsigned freq = freqs[string*5+buffer[1]];
+
+		// Initial volume 0.3 to keep below 1 when all sine waves are added
+		initNote(&notes[string][nextNote[string]], (freq+50) / 100, 0.3);
+		__sync_synchronize();
+		state.notes[string] = &notes[string][nextNote[string]];
+		__sync_synchronize();
+		nextNote[string] = (nextNote[string] + 1) & 1;
 	}
 
 	__sync_synchronize();
