@@ -206,7 +206,9 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	val = 0;
 	harmonicLimit = timings[timing].numHarmonics;
 	for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
-		val += sin_scaled(fundFreq*(harmonic+1)*time) * (timings[timing].harmonics[harmonic] * not_ratioIntoTiming + timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
+		val += sin_scaled(fundFreq*(harmonic+1)*time) *
+			(timings[timing].harmonics[harmonic] * not_ratioIntoTiming +
+			 timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 	}
 	val = val * volume;
 	*outputSample = val;
@@ -245,6 +247,8 @@ void *playerThread(void *input) {
 					 2, SAMPLE_BITS/8 * n_samples);
 	audioplay_set_dest(player, "local");
 
+#define NUM_NOTES (sizeof(state->notes)/sizeof(*state->notes))
+
 	while(1) {
 		unsigned i, j;
 		unsigned char stop;
@@ -257,7 +261,7 @@ void *playerThread(void *input) {
 		stop = 0;
 		for(i = 0; i < n_samples && !stop; ++i) {
 			samples[i] = 0;
-			for(j = 0; j < sizeof(state->notes)/sizeof(*state->notes); ++j) {
+			for(j = 0; j < NUM_NOTES; ++j) {
 				struct NoteState *note = state->notes[j];
 				if(note == (void*)-1U) {
 					stop = 1;
@@ -267,7 +271,7 @@ void *playerThread(void *input) {
 						__sync_bool_compare_and_swap(&state->notes[j], note,
 													 NULL, note,
 													 &state->notes[j]);
-					samples[i] += currSample;
+					samples[i] += currSample / NUM_NOTES;
 				}
 			}
 		}
@@ -284,6 +288,7 @@ void *playerThread(void *input) {
 		if(pendingSamples >= SAMPLE_RATE/80)
 			usleep(pendingSamples * (1000000/SAMPLE_RATE) - 12000);
 	}
+#undef NUM_NOTES
 
 	audioplay_delete(player);
 	return NULL;
