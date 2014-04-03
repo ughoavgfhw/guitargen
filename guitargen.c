@@ -222,7 +222,7 @@ int main() {
 			nextNote = (nextNote + 1) & 1;
 		} else if(c == 0x04 && isatty(0)) {
 			// Non-canonical terminal mode breaks ^D for EOF, so handle it here
-			putchar('\n');
+			fputc('\n', stderr);
 			break;
 		}
 	}
