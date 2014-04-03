@@ -293,8 +293,8 @@ int main() {
 	if(isatty(0)) {
 		struct termios t;
 		tcgetattr(0, &t);
-		t.c_lflag &= ~ICANON;
-		t.c_cc[VMIN] = 2; // Return after each pair of bytes
+		cfmakeraw(&t); // Raw input mode
+		t.c_cc[VMIN] = 3; // Return after each 3-byte packet
 		t.c_cc[VTIME] = 0;
 		tcsetattr(0, TCSANOW, &t);
 	}
@@ -308,7 +308,7 @@ int main() {
 	pthread_t thread;
 	pthread_create(&thread, NULL, playerThread, &state);
 
-	uint8_t buffer[2];
+	uint8_t buffer[3];
 	while(read(0, buffer, sizeof(buffer)) == sizeof(buffer)) {
 		static unsigned freqs[19+(NUM_STRINGS-1)*5] = {
 			11000, 11654, 12347, 13081, 13859, 14683, 15556, 16481,
@@ -316,7 +316,8 @@ int main() {
 			27718, 29366, 31113, 32963, 34923, 36999, 39200, 41530
 		};
 
-		if(buffer[0] == 0 || buffer[0] > NUM_STRINGS || buffer[1] > 18)
+		if(buffer[0] == 0 || buffer[0] > NUM_STRINGS || buffer[1] > 18 ||
+		   buffer[2] != 0xff)
 			continue;
 		uint8_t string = buffer[0] - 1;
 
