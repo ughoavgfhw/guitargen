@@ -55,12 +55,14 @@ int sin_scaled(unsigned x) {
 }
 
 #define MAX_HARMONICS 45
-const struct {
+struct Timing {
 	unsigned length; // In samples
 	double multiplier;
 	unsigned numHarmonics;
 	double harmonics[MAX_HARMONICS];
-} timings[] = {
+};
+
+const struct Timing timings[] = {
 		// Unused partials: 34, 28, 10, 29, 17
 		// Harmonic			 2       3       4       5       6       7      8   9      10      11      12      13      14      15      16     17 18  19      20      21      22      23      24     25 26 27  28      29      30      31      32      33     34 35 36 37 38  39      40     41  42      43      44
 		// Partial Number	32      35      36      31      24      25      -  01      02      19      20      26      27      00      03      -  -  04      05      06      21      07      08      -  -  -  09      22      23      30      11      12      -  -  -  -  -  13      14      -  15      16      18
@@ -86,9 +88,21 @@ const struct {
 	
 	// or 1.0 to 5k; 0.5 to 4k; 0.5 to 3.35k; 0.5 to 2.5k; 0.75 to 2.0k; 1.75 to 1.6k
 };
-// NUM_TIMINGS removes the last, empty timing used for interpolation
-#define NUM_TIMINGS (sizeof(timings)/sizeof(*timings) - 1)
 #define SAMPLE_BITS 16
+
+struct TimingInfo {
+	unsigned timingCount; // Should exclude an empty timing at the end
+	const struct Timing *timings;
+};
+const struct Timing t[] = {{SAMPLE_RATE, 0.5, 1, {1}}, {0, 1, 0, {0}}};
+const struct FrequencyTimingRange {
+	unsigned minFreq, maxFreq; // Max is excluded
+	struct TimingInfo timingInfo;
+} freqTimeMap[] = { // Ordered by frequency, non-overlapping
+	{0, 100, {1, t}},
+	{100, 200, {sizeof(timings)/sizeof(*timings) - 1, timings}},
+	{200, 20000, {1, t}}
+};
 
 struct NoteState {
 	unsigned time, timingEnd;
@@ -96,20 +110,37 @@ struct NoteState {
 	double ratioPerSample, ratioIntoTiming;
 	unsigned timing;
 	unsigned fundFreq;
+	struct TimingInfo timingInfo;
 };
 
 void initNote(struct NoteState *note, unsigned fundFreq, double initialVol) {
-	double ratioPerSample = 1.0 / timings[0].length;
-	double dVolume = (timings[0].multiplier - 1) * initialVol * ratioPerSample;
+	unsigned min = 0, max = sizeof(freqTimeMap)/sizeof(*freqTimeMap);
+	unsigned i;
+	// Binary search for the frequency. If not found, returns the next position
+	// higher or lower (but may return either unless at an end)
+	do {
+		i = ((max - min) >> 1) + min;
+		if(fundFreq < freqTimeMap[i].minFreq) {
+			max = i;
+		} else if(fundFreq >= freqTimeMap[i].maxFreq) {
+			min = i+1;
+		} else break;
+	} while(min < max);
+	struct TimingInfo timingInfo = freqTimeMap[i].timingInfo;
+
+	double ratioPerSample = 1.0 / timingInfo.timings[0].length;
+	double dVolume = (timingInfo.timings[0].multiplier - 1) *
+		initialVol * ratioPerSample;
 
 	note->time = 0;
-	note->timingEnd = timings[0].length;
+	note->timingEnd = timingInfo.timings[0].length;
 	note->volume = initialVol;
 	note->dVolume = dVolume;
 	note->ratioPerSample = ratioPerSample;
 	note->ratioIntoTiming = 0;
 	note->timing = 0;
 	note->fundFreq = fundFreq;
+	note->timingInfo = timingInfo;
 }
 
 // Returns true if the note is still playing and false if it is finished
@@ -124,6 +155,7 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	double ratioIntoTiming = note->ratioIntoTiming;
 	double volume = note->volume;
 	double not_ratioIntoTiming = 1 - ratioIntoTiming;
+	const struct Timing *timings = note->timingInfo.timings;
 
 	val = 0;
 	harmonicLimit = timings[timing].numHarmonics;
@@ -141,7 +173,7 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 
 	if(time >= note->timingEnd) {
 		++timing;
-		if(timing < NUM_TIMINGS) {
+		if(timing < note->timingInfo.timingCount) {
 			note->timing = timing;
 			note->timingEnd += timings[timing].length;
 			note->ratioPerSample = 1.0 / timings[timing].length;
