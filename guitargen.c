@@ -249,12 +249,16 @@ int main() {
 	int c, octave = 4;
 	while((c = getchar()) != EOF) {
 		static unsigned freq0[] = {2750, 3087, 1635, 1835, 2060, 2183, 2450};
+		unsigned sharpMult = 271;
 
-		if('a' <= c && 'g' >= c) c -= 'a' - 'A';
+		if('a' <= c && 'g' >= c) {
+			c -= 'a' - 'A';
+			sharpMult = 256;
+		}
 		if('0' <= c && '8' >= c) octave = c - '0';
 		else if('A' <= c && 'G' >= c) {
-			unsigned freq = freq0[c - 'A'];
-			freq <<= octave;
+			unsigned freq = freq0[c - 'A'] * sharpMult;
+			freq >>= 8 - octave;
 
 			// Initial volume 0.3 to keep below 1 when all sine waves are added
 			initNote(&notes[nextNote], freq / 100, 0.3);
