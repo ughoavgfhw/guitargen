@@ -1,5 +1,5 @@
-CFLAGS += -O3
-LDFLAGS += -lm -lpthread
+CFLAGS += -O3 -g
+LDFLAGS += -lm -lpthread -g -O3
 
 guitargen: guitargen.o rawaudio/libaudio.so
 
