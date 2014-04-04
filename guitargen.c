@@ -10,6 +10,8 @@
 #include <termios.h>
 #include "rawaudio/audioplay.h"
 
+#define dump(b,s) //write(1,(b),(s))
+
 #define SAMPLE_RATE 44100
 #define SAMPLE_BITS 16
 
@@ -77,7 +79,6 @@ struct FrequencyTimingRange {
 };
 #define TIMING_MAP(min,max,tim) {min, max, {sizeof(tim)/sizeof(*tim)-1, tim}}
 
-#ifndef OLD_TIMINGS
 const struct Timing _t_A2[] = {
 #  include "timings/A2.c"
 	{0, 1, 0, {0}}
@@ -102,6 +103,42 @@ const struct Timing _t_D3[] = {
 #  include "timings/D3.c"
 	{0, 1, 0, {0}}
 };
+const struct Timing _t_D3S[] = {
+#  include "timings/D3S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_E3[] = {
+#  include "timings/E3.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_F3[] = {
+#  include "timings/F3.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_F3S[] = {
+#  include "timings/F3S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_G3[] = {
+#  include "timings/G3.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_G3S[] = {
+#  include "timings/G3S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_A3[] = {
+#  include "timings/A3.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_A3S[] = {
+#  include "timings/A3S.c"
+	{0, 1, 0, {0}}
+};
+const struct Timing _t_B3[] = {
+#  include "timings/B3.c"
+	{0, 1, 0, {0}}
+};
 
 // Ordered by frequency, non-overlapping
 const struct FrequencyTimingRange freqTimeMap[] = {
@@ -110,45 +147,17 @@ const struct FrequencyTimingRange freqTimeMap[] = {
 	TIMING_MAP(120, 126, _t_B2),
 	TIMING_MAP(126, 134, _t_C3),
 	TIMING_MAP(134, 142, _t_C3S),
-	TIMING_MAP(142, 150, _t_D3)
+	TIMING_MAP(142, 150, _t_D3),
+	TIMING_MAP(150, 160, _t_D3S),
+	TIMING_MAP(160, 170, _t_E3),
+	TIMING_MAP(170, 180, _t_F3),
+	TIMING_MAP(180, 190, _t_F3S),
+	TIMING_MAP(190, 201, _t_G3),
+	TIMING_MAP(201, 213, _t_G3S),
+	TIMING_MAP(213, 226, _t_A3),
+	TIMING_MAP(226, 240, _t_A3S),
+	TIMING_MAP(240, 254, _t_B3)
 };
-#else
-# warning "Old timings in use"
-const struct Timing timings[] = {
-		// Unused partials: 34, 28, 10, 29, 17
-		// Harmonic			 2       3       4       5       6       7      8   9      10      11      12      13      14      15      16     17 18  19      20      21      22      23      24     25 26 27  28      29      30      31      32      33     34 35 36 37 38  39      40     41  42      43      44
-		// Partial Number	32      35      36      31      24      25      -  01      02      19      20      26      27      00      03      -  -  04      05      06      21      07      08      -  -  -  09      22      23      30      11      12      -  -  -  -  -  13      14      -  15      16      18
-	// 1.000 second up to 5.0kHz split to 0.1 + 0.15 + 0.25 + 0.5 seconds
-	//{ SAMPLE_RATE/10, 1.0000, 0, {0}},
-	{SAMPLE_RATE*3/20, 0.7638, 44, {1, 0.9394, 0.2622, 0.3507, 0.2504, 0.1056, 0.1134, 0, 0.0140, 0.0783, 0.1048, 0.0434, 0.0680, 0.1010, 0.0654, 0.0293, 0, 0, 0.0339, 0.0702, 0.0902, 0.1042, 0.0628, 0.0323, 0, 0, 0, 0.0293, 0.0262, 0.1166, 0.0376, 0.0374, 0.0610, 0, 0, 0, 0, 0, 0.0298, 0.0387, 0, 0.0289, 0.0295, 0.0331}},
-	{SAMPLE_RATE  / 4, 0.7094, 44, {1, 0.8860, 0.5025, 0.5161, 0.3476, 0.1453, 0.1351, 0, 0.0354, 0.0904, 0.1348, 0.0569, 0.1348, 0.0588, 0.0623, 0.0290, 0, 0, 0.0254, 0.0312, 0.0830, 0.1015, 0.0621, 0.0245, 0, 0, 0, 0.0156, 0.0101, 0.0550, 0.0172, 0.0189, 0.0364, 0, 0, 0, 0, 0, 0.0112, 0.0108, 0, 0.0112, 0.0113, 0.0028}},
-	{SAMPLE_RATE  / 2, 0.7273, 44, {1, 0.4717, 0.4832, 0.5992, 0.4270, 0.1353, 0.1380, 0, 0.0375, 0.0723, 0.1002, 0.0874, 0.1811, 0.0272, 0.0328, 0.0254, 0, 0, 0.0257, 0.0393, 0.0411, 0.0568, 0.0204, 0.0124, 0, 0, 0, 0.0053, 0.0094, 0.0142, 0.0076, 0.0095, 0.0097, 0, 0, 0, 0, 0, 0.0022, 0.0013, 0, 0.0023, 0.0024, 0.0007}},
-	// 0.500 second up to 4.0kHz
-	{SAMPLE_RATE  / 2, 0.7678, 33, {1, 0.2216, 0.3029, 0.5942, 0.4486, 0.0752, 0.0961, 0, 0.0230, 0.0216, 0.0622, 0.0908, 0.0703, 0.0251, 0.0270, 0.0152, 0, 0, 0.0074, 0.0130, 0.0175, 0.0238, 0.0103, 0.0054, 0, 0, 0, 0.0015, 0.0028, 0.0048, 0.0020, 0.0022, 0.0016}},
-	// 0.375 second up to 3.35kHz
-	{SAMPLE_RATE*3/ 8, 0.8046, 30, {1, 0.2113, 0.2332, 0.5782, 0.4158, 0.0518, 0.0381, 0, 0.0153, 0.0387, 0.0944, 0.0372, 0.0874, 0.0292, 0.0273, 0.0103, 0, 0, 0.0081, 0.0093, 0.0064, 0.0096, 0.0030, 0.0033, 0, 0, 0, 0.0000, 0.0000, 0.0018}},
-	// 0.250 second up to 2.6kHz
-	{SAMPLE_RATE  / 4, 0.7014, 23, {1, 0.1221, 0.2184, 0.5863, 0.3852, 0.0537, 0.0115, 0, 0.0144, 0.0494, 0.0854, 0.0399, 0.1212, 0.0308, 0.0087, 0.0080, 0, 0, 0.0032, 0.0046, 0.0048, 0.0063, 0.0025}},
-	// 0.625 second up to 2.5kHz
-	{SAMPLE_RATE*5/ 8, 0.5755, 22, {1, 0.1933, 0.1782, 0.6735, 0.3806, 0.0680, 0.0478, 0, 0.0074, 0.0454, 0.0398, 0.0705, 0.0637, 0.0295, 0.0148, 0.0064, 0, 0, 0.0024, 0.0056, 0.0026, 0.0033}},
-	// 0.500 second up to 2.0kHz
-	{SAMPLE_RATE  / 2, 0.2765, 16, {1, 0.3174, 0.1389, 0.9126, 0.5333, 0.0827, 0.0715, 0, 0.0114, 0.0185, 0.0865, 0.0429, 0.0878, 0.0325, 0.0149, 0.0052}},
-	// 1.750 second up to 1.6kHz
-	{SAMPLE_RATE*7/ 4, 0.2287, 14, {1, 0.9405, 0.1277, 1.4852, 1.4344, 0.1408, 0.0746, 0, 0.0396, 0.0708, 0.1134, 0.0952, 0.1302, 0.0471}},
-	{0, 1, 0, {0}}
-	// Fund. Freq. Volumes: 0.109247 0.083442 0.059196 0.043054 0.033059 0.026599 0.018656 0.010737 0.002969 end=0.000679
-	
-	// or 1.0 to 5k; 0.5 to 4k; 0.5 to 3.35k; 0.5 to 2.5k; 0.75 to 2.0k; 1.75 to 1.6k
-};
-const struct Timing t[] = {{SAMPLE_RATE, 0.5, 1, {1}}, {0, 1, 0, {0}}};
-
-// Ordered by frequency, non-overlapping
-const struct FrequencyTimingRange freqTimeMap[] = {
-	{0, 100, {1, t}},
-	{100, 200, {sizeof(timings)/sizeof(*timings) - 1, timings}},
-	{200, 20000, {1, t}}
-};
-#endif //ndef OLD_TIMINGS
 
 struct NoteState {
 	unsigned time, timingEnd;
@@ -279,6 +288,7 @@ void *playerThread(void *input) {
 		if(stop) break;
 
 		audioplay_play_buffer(player, samples, i*sizeof(*samples));
+		dump(samples, i*sizeof(*samples));
 		if(i < n_samples)
 			break;
 
