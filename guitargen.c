@@ -1,3 +1,38 @@
+/* Guitar audio synthesis for a Raspberry Pi
+ *
+ * EE 4951W Spring 2014
+ * Group 10: Optical Guitar
+ * Advisor: Dr. James Leger
+ * Group members: Sandra Arnold, Justin Buth, Matthew Lewis, Steffen Moeller, Anh Nguyen
+ *
+ * Target device: Raspberry Pi
+ * Compile using the makefile and C compiler.
+ * Run with standard input redirected to the event source.
+ */
+
+/* This code is licensed under The MIT License (MIT).
+ * 
+ * Copyright (c) 2014 Sandra Arnold, Justin Buth, Matthew Lewis, Steffen Moeller, Anh Nguyen
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 #include <math.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -9,6 +44,7 @@
 #include <termios.h>
 #include "rawaudio/audioplay.h"
 
+// The dump macro can be used to dump the raw samples to a file
 #define dump(b,s) //write(1,(b),(s))
 
 #define SAMPLE_RATE 44100
@@ -58,6 +94,13 @@ int sin_scaled(unsigned x) {
 	return 0;
 }
 
+/* Timing structure to represent a single time segment within a note.
+ * length: The number of samples this time segment lasts
+ * multiplier: The change in base volume across this time segment
+ * numHarmonics: 1 more than the index of the highest harmonic in this segment
+ * harmonics: Volumes of each harmonic relative to the base. The first value
+ *            is the fundamental frequency, and is usually 1.0
+ */
 #define MAX_HARMONICS 58
 struct Timing {
 	unsigned length; // In samples
@@ -65,19 +108,26 @@ struct Timing {
 	unsigned numHarmonics;
 	double harmonics[MAX_HARMONICS];
 };
+// The TIMING macro allows specifying the length as a fraction of time
 #define TIMING(len,vol,num,vals...) {SAMPLE_RATE*len, vol, num, vals}
 
+// TimingInfo structure contains a group of timings for a single note
 struct TimingInfo {
 	unsigned timingCount; // Should exclude an empty timing at the end
 	const struct Timing *timings;
 };
 
+// FrequencyTimingRange structure is used to map frequencies to timing info
 struct FrequencyTimingRange {
 	unsigned minFreq, maxFreq; // Max is excluded
 	struct TimingInfo timingInfo;
 };
+/* TIMING_MAP defines a FrequencyTimingRange using an array of Timing's. It
+ * calculates the number of timings in the array automatically.
+ */
 #define TIMING_MAP(min,max,tim) {min, max, {sizeof(tim)/sizeof(*tim)-1, tim}}
 
+// Timing arrays for each note. Data is included from the timings directory
 const struct Timing _t_A2[] = {
 #  include "timings/A2.c"
 	{0, 1, 0, {0}}
@@ -139,6 +189,9 @@ const struct Timing _t_B3[] = {
 	{0, 1, 0, {0}}
 };
 
+/* freqTimeMap is a global array of FrequencyTimeRange's, which is used to map
+ * all frequencies to the note timings above.
+ */
 // Ordered by frequency, non-overlapping
 const struct FrequencyTimingRange freqTimeMap[] = {
 	TIMING_MAP(106, 113, _t_A2),
@@ -158,6 +211,19 @@ const struct FrequencyTimingRange freqTimeMap[] = {
 	TIMING_MAP(240, 254, _t_B3)
 };
 
+/* NoteState structure includes information about a note as it plays. These
+ * fields may be changed by the player for any active note.
+ * time: The current time, in samples since the note started
+ * timingEnd: The time, in samples, where the current time segment will end
+ * volume: The current base volume
+ * dVolume: The amount that the base volume changes after each sample.
+ *          Calculated for each time segment.
+ * ratioPerSample: 1/number of samples in current time segment
+ * ratioIntoTiming: The interpolation factor to the next timing. [0,1)
+ * timing: The index of the current time segment
+ * fundFreq: The fundamental frequency, in Hz, of this note
+ * timingInfo: The timing info for this note
+ */
 struct NoteState {
 	unsigned time, timingEnd;
 	double volume, dVolume;
@@ -167,6 +233,15 @@ struct NoteState {
 	struct TimingInfo timingInfo;
 };
 
+/* initNote: Initializes a note state for playing. The timing info is chosen
+ * using the given fundamental frequency, and the base volume is set as
+ * requested. Other information is derived from the selected timing info. The
+ * time is started at 0.
+ *
+ * note: A pointer to the note to be initialized
+ * fundFreq: The fundamental frequency to be played
+ * initialVol: The initial base volume
+ */
 void initNote(struct NoteState *note, unsigned fundFreq, double initialVol) {
 	unsigned min = 0, max = sizeof(freqTimeMap)/sizeof(*freqTimeMap);
 	unsigned i;
@@ -197,7 +272,10 @@ void initNote(struct NoteState *note, unsigned fundFreq, double initialVol) {
 	note->timingInfo = timingInfo;
 }
 
-// Returns true if the note is still playing and false if it is finished
+/* getNoteSample: Advances the note one sample. The calculated sample is placed
+ * in outputSample (which must not be NULL).
+ * Returns true if the note is still playing and false if it is finished
+ */
 _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	double val;
 	unsigned harmonic, harmonicLimit;
@@ -214,19 +292,23 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	val = 0;
 	harmonicLimit = timings[timing].numHarmonics;
 	for(harmonic = 0; harmonic < harmonicLimit; ++harmonic) {
+		// Add the result for the next harmonic
 		val += sin_scaled(fundFreq*(harmonic+1)*time) *
 			(timings[timing].harmonics[harmonic] * not_ratioIntoTiming +
 			 timings[timing+1].harmonics[harmonic] * ratioIntoTiming);
 	}
+	// Multiply by the base volume and save the result
 	val = val * volume;
 	*outputSample = val;
 
+	// Update the note information
 	volume += note->dVolume;
 	note->volume = volume;
 	time += 1;
 	note->time = time;
 	note->ratioIntoTiming = ratioIntoTiming + note->ratioPerSample;
 
+	// Move to the next timing if done with this one
 	if(time >= note->timingEnd) {
 		++timing;
 		if(timing < note->timingInfo.timingCount) {
@@ -240,10 +322,17 @@ _Bool getNoteSample(struct NoteState *note, short *outputSample) {
 	return 1;
 }
 
+// PlayerState structure contains an array of note pointers for the player
 struct PlayerState {
 	struct NoteState *notes[NUM_STRINGS];
 };
 
+/* playerThread: Gien a PlayerState pointer, continuously calculates and plays
+ * samples. The samples for all notes are averaged together. A NULL note
+ * indicates that no note should be played, so a sample of 0 is used. A note of
+ * `(void*)-1U` in any position indicates that the player should stop playing
+ * and exit. A note is set to NULL atomically after it completes.
+ */
 void *playerThread(void *input) {
 	bcm_host_init();
 
@@ -253,6 +342,7 @@ void *playerThread(void *input) {
 	struct PlayerState *state = input;
 	audioplay_create(&player, SAMPLE_RATE, 1, SAMPLE_BITS,
 					 2, SAMPLE_BITS/8 * n_samples);
+	// Play to the 3.5mm audio jack
 	audioplay_set_dest(player, "local");
 
 #define NUM_NOTES (sizeof(state->notes)/sizeof(*state->notes))
@@ -266,9 +356,11 @@ void *playerThread(void *input) {
 		// Get one of the buffers. This shouldn't ever wait long, so just spin
 		while((samples = audioplay_get_buffer(player)) == NULL) ;
 
+		// Fill with 10ms worth of samples
 		stop = 0;
 		for(i = 0; i < n_samples && !stop; ++i) {
 			samples[i] = 0;
+			// Calculate the sample for each note and average them together
 			for(j = 0; j < NUM_NOTES; ++j) {
 				struct NoteState *note = state->notes[j];
 				if(note == (void*)-1U) {
@@ -284,10 +376,14 @@ void *playerThread(void *input) {
 			}
 		}
 
+		// Stop if some note was `(void*)-1U`
 		if(stop) break;
 
+		// Play the samples
 		audioplay_play_buffer(player, samples, i*sizeof(*samples));
+		// Write to a file, if requested
 		dump(samples, i*sizeof(*samples));
+		// Stop if a partial buffer was created
 		if(i < n_samples)
 			break;
 
@@ -303,7 +399,16 @@ void *playerThread(void *input) {
 	return NULL;
 }
 
+/* main: Starts the player thread and reads events. If the input is a terminal,
+ * sets it to raw mode, returning after 3 bytes of input.
+ *
+ * Event format: 3 bytes
+ * Byte 0: String index, 1 ... NUM_STRINGS. Bit 7 set = stop instead of play
+ * Byte 1: Frequency index, 0 ... 18. Ignored when stopping a note
+ * Byte 2: Separator. Always 0xFF
+ */
 int main() {
+	// Set a terminal to raw mode
 	if(isatty(0)) {
 		struct termios t;
 		tcgetattr(0, &t);
@@ -313,6 +418,7 @@ int main() {
 		tcsetattr(0, TCSANOW, &t);
 	}
 
+	// Define state and start the player thread
 	struct NoteState notes[NUM_STRINGS][2];
 	struct PlayerState state;
 	memset(&state, 0, sizeof(state));
@@ -322,6 +428,7 @@ int main() {
 	pthread_t thread;
 	pthread_create(&thread, NULL, playerThread, &state);
 
+	// Read events from stdin
 	uint8_t buffer[3];
 	while(read(0, buffer, sizeof(buffer)) == sizeof(buffer)) {
 		static unsigned freqs[19+(NUM_STRINGS-1)*5] = {
@@ -346,6 +453,7 @@ int main() {
 
 			// Initial volume 0.3 to keep below 1 when all sine waves are added
 			initNote(&notes[string][nextNote[string]], (freq+50) / 100, 0.3);
+			// Use synchronization while updating the note
 			__sync_synchronize();
 			state.notes[string] = &notes[string][nextNote[string]];
 			__sync_synchronize();
@@ -357,6 +465,7 @@ int main() {
 		}
 	}
 
+	// No more input. Tell the player to stop, then wait for it
 	__sync_synchronize();
 	state.notes[0] = (void*)-1U; // Only need to set 1 to stop the player
 	__sync_synchronize();
