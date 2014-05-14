@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <signal.h>
 #include <string.h>
-#include <sys/timerfd.h>
 #include <pthread.h>
 #include <sys/types.h>
 #include <stdint.h>
@@ -331,19 +330,31 @@ int main() {
 			27718, 29366, 31113, 32963, 34923, 36999, 39200, 41530
 		};
 
-		if(buffer[0] == 0 || buffer[0] > NUM_STRINGS || buffer[1] > 18 ||
+		uint8_t string = buffer[0] - 1;
+		uint8_t isRelease = 0;
+		if(string & 0x80) {
+			string &= 0x7F;
+			isRelease = 1;
+		}
+
+		if(string >= NUM_STRINGS || buffer[1] > 18 ||
 		   buffer[2] != 0xff)
 			continue;
-		uint8_t string = buffer[0] - 1;
 
-		unsigned freq = freqs[string*5+buffer[1]];
+		if(!isRelease) {
+			unsigned freq = freqs[string*5+buffer[1]];
 
-		// Initial volume 0.3 to keep below 1 when all sine waves are added
-		initNote(&notes[string][nextNote[string]], (freq+50) / 100, 0.3);
-		__sync_synchronize();
-		state.notes[string] = &notes[string][nextNote[string]];
-		__sync_synchronize();
-		nextNote[string] = (nextNote[string] + 1) & 1;
+			// Initial volume 0.3 to keep below 1 when all sine waves are added
+			initNote(&notes[string][nextNote[string]], (freq+50) / 100, 0.3);
+			__sync_synchronize();
+			state.notes[string] = &notes[string][nextNote[string]];
+			__sync_synchronize();
+			nextNote[string] = (nextNote[string] + 1) & 1;
+		} else {
+			__sync_synchronize();
+			state.notes[string] = NULL;
+			__sync_synchronize();
+		}
 	}
 
 	__sync_synchronize();
