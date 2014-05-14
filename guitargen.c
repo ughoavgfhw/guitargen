@@ -248,7 +248,7 @@ void *playerThread(void *input) {
 	bcm_host_init();
 
 	// Write 10ms worth of samples at once to sync with system clock rate
-	const n_samples = SAMPLE_RATE / 100;
+	const int n_samples = SAMPLE_RATE / 100;
 	AUDIOPLAY_STATE_T *player;
 	struct PlayerState *state = input;
 	audioplay_create(&player, SAMPLE_RATE, 1, SAMPLE_BITS,
